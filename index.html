@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flip Disc Display Simulator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="display-wrapper">
+            <div id="flipDiscDisplay" class="flip-disc-display"></div>
+        </div>
+
+        <div class="controls">
+            <h2>Controls</h2>
+            <div class="control-group">
+                <label>Display Size:</label>
+                <button onclick="setGridSize(20, 7)">20x7 (Small)</button>
+                <button onclick="setGridSize(28, 13)">28x13 (Medium)</button>
+                <button onclick="setGridSize(42, 20)">42x20 (Large)</button>
+            </div>
+
+            <div class="control-group">
+                <label>Patterns:</label>
+                <button onclick="showPattern('wave')">Wave</button>
+                <button onclick="showPattern('random')">Random</button>
+                <button onclick="showPattern('checkerboard')">Checkerboard</button>
+                <button onclick="showPattern('clear')">Clear</button>
+                <button onclick="showPattern('fill')">Fill</button>
+            </div>
+
+            <div class="control-group">
+                <label>Text Display:</label>
+                <input type="text" id="textInput" placeholder="Enter text..." maxlength="20">
+                <button onclick="displayText()">Show Text</button>
+                <button onclick="scrollText()">Scroll Text</button>
+            </div>
+
+            <div class="control-group">
+                <label>Animation Speed:</label>
+                <input type="range" id="speedControl" min="50" max="500" value="200" oninput="updateSpeed(this.value)">
+                <span id="speedValue">200ms</span>
+            </div>
+
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="soundToggle" checked onchange="toggleSound(this.checked)">
+                    Enable Sound
+                </label>
+            </div>
+
+            <div class="control-group">
+                <button onclick="toggleFullscreen()" class="fullscreen-btn">Toggle Fullscreen</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
