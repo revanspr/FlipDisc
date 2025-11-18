@@ -20,7 +20,8 @@
       "Bash(for level in d1 d2 d3 d4 d5 d6)",
       "Bash(do echo -n \"$level: \")",
       "Bash(done)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(npx http-server -p 8080 -o)"
     ],
     "deny": [],
     "ask": []
