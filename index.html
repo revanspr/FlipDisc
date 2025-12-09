@@ -14,7 +14,7 @@
         </div>
 
         <div class="display-wrapper">
-            <div id="flipDotDisplay" class="flip-dot-display"></div>
+            <canvas id="flipDotDisplay" class="flip-dot-display"></canvas>
         </div>
 
         <div class="controls">
@@ -44,12 +44,6 @@
             </div>
 
             <div class="control-group">
-                <label>Update Speed (ms):</label>
-                <input type="range" id="updateSpeed" min="50" max="500" value="100" oninput="updateSpeed(this.value)">
-                <span id="updateSpeedValue">100ms</span>
-            </div>
-
-            <div class="control-group">
                 <label>
                     <input type="checkbox" id="soundToggle" checked onchange="toggleSound(this.checked)">
                     Enable Drone Synth
@@ -58,8 +52,14 @@
 
             <div class="control-group">
                 <label>Synth Volume:</label>
-                <input type="range" id="volume" min="0" max="100" value="30" oninput="updateVolume(this.value)">
-                <span id="volumeValue">30%</span>
+                <input type="range" id="volume" min="0" max="100" value="20" oninput="updateVolume(this.value)">
+                <span id="volumeValue">20%</span>
+            </div>
+
+            <div class="control-group">
+                <label>Dot Size:</label>
+                <input type="range" id="dotSize" min="3" max="12" value="6" oninput="updateDotSize(this.value)">
+                <span id="dotSizeValue">6px</span>
             </div>
 
             <div class="control-group">
