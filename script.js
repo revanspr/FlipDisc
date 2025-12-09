@@ -1,323 +1,354 @@
-// Flip Disc Display Simulator
-class FlipDiscDisplay {
-    constructor(cols = 28, rows = 13) {
-        this.cols = cols;
-        this.rows = rows;
-        this.discs = [];
-        this.animationSpeed = 200;
-        this.soundEnabled = true;
+// Camera Flip-Dot Display with Drone Synthesizer
+class CameraFlipDotDisplay {
+    constructor() {
+        this.cols = 120;
+        this.rows = 120;
+        this.dots = [];
+        this.previousState = [];
+
+        // Camera settings
+        this.video = document.getElementById('webcam');
+        this.canvas = document.getElementById('processingCanvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.canvas.width = this.cols;
+        this.canvas.height = this.rows;
+        this.stream = null;
+        this.cameraActive = false;
+        this.mirrorCamera = true;
+
+        // Image processing settings
+        this.threshold = 128;
+        this.brightness = 0;
+        this.contrast = 100;
+        this.updateSpeed = 100;
+        this.updateInterval = null;
+
+        // Synthesizer settings
         this.audioContext = null;
-        this.scrollInterval = null;
+        this.soundEnabled = true;
+        this.masterGain = null;
+        this.volume = 0.3;
+        this.activeOscillators = new Map();
+
         this.init();
     }
 
     init() {
-        const display = document.getElementById('flipDiscDisplay');
-        display.style.gridTemplateColumns = `repeat(${this.cols}, 1fr)`;
+        const display = document.getElementById('flipDotDisplay');
         display.innerHTML = '';
-        this.discs = [];
+        this.dots = [];
+        this.previousState = [];
 
+        // Create 120x120 grid
         for (let row = 0; row < this.rows; row++) {
             for (let col = 0; col < this.cols; col++) {
-                const disc = this.createDisc(row, col);
-                display.appendChild(disc);
-                this.discs.push({
-                    element: disc,
+                const dot = this.createDot(row, col);
+                display.appendChild(dot);
+                this.dots.push({
+                    element: dot,
                     row: row,
                     col: col,
-                    state: false // false = black, true = yellow
+                    state: false
                 });
+                this.previousState.push(false);
             }
         }
 
-        // Initialize Web Audio API for sound
-        if (this.soundEnabled && !this.audioContext) {
+        // Initialize audio
+        this.initAudio();
+    }
+
+    createDot(row, col) {
+        const dot = document.createElement('div');
+        dot.className = 'dot flipped'; // Start with black
+        dot.innerHTML = `
+            <div class="dot-face dot-front"></div>
+            <div class="dot-face dot-back"></div>
+        `;
+        return dot;
+    }
+
+    initAudio() {
+        if (!this.audioContext) {
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            this.masterGain = this.audioContext.createGain();
+            this.masterGain.gain.value = this.volume;
+            this.masterGain.connect(this.audioContext.destination);
         }
     }
 
-    createDisc(row, col) {
-        const disc = document.createElement('div');
-        disc.className = 'disc';
-        disc.innerHTML = `
-            <div class="disc-face disc-front"></div>
-            <div class="disc-face disc-back"></div>
-        `;
-
-        // Click to toggle individual disc
-        disc.addEventListener('click', () => {
-            this.toggleDisc(row * this.cols + col);
-        });
-
-        return disc;
-    }
-
-    playFlipSound() {
+    // Drone synthesizer - vertical position maps to pitch
+    playDroneSound(row, col, duration = 0.3) {
         if (!this.soundEnabled || !this.audioContext) return;
 
+        const key = `${row}-${col}`;
+
+        // If already playing, don't retrigger
+        if (this.activeOscillators.has(key)) return;
+
+        // Map row to frequency (inverted: row 0 = high pitch, row 119 = low pitch)
+        const minFreq = 60;   // Low C (around C2)
+        const maxFreq = 800;  // Higher pitch
+        const normalizedRow = 1 - (row / this.rows); // Invert so top = high
+        const frequency = minFreq + (maxFreq - minFreq) * normalizedRow;
+
+        // Create oscillator with subtle detuning
         const oscillator = this.audioContext.createOscillator();
         const gainNode = this.audioContext.createGain();
+        const filterNode = this.audioContext.createBiquadFilter();
 
-        oscillator.connect(gainNode);
-        gainNode.connect(this.audioContext.destination);
+        // Oscillator settings - sine wave for smooth drone
+        oscillator.type = 'sine';
+        oscillator.frequency.value = frequency;
 
-        oscillator.frequency.value = 100 + Math.random() * 50;
-        oscillator.type = 'square';
+        // Subtle frequency modulation for organic feel
+        const detune = (Math.random() - 0.5) * 10;
+        oscillator.detune.value = detune;
 
-        gainNode.gain.setValueAtTime(0.05, this.audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.05);
+        // Low-pass filter for warmth
+        filterNode.type = 'lowpass';
+        filterNode.frequency.value = frequency * 2;
+        filterNode.Q.value = 1;
 
-        oscillator.start(this.audioContext.currentTime);
-        oscillator.stop(this.audioContext.currentTime + 0.05);
+        // Gain envelope - slow attack and release for drone effect
+        const now = this.audioContext.currentTime;
+        const attackTime = 0.05;
+        const releaseTime = 0.2;
+        const peakGain = 0.015; // Quiet individual dots
+
+        gainNode.gain.setValueAtTime(0, now);
+        gainNode.gain.linearRampToValueAtTime(peakGain, now + attackTime);
+        gainNode.gain.setValueAtTime(peakGain, now + duration - releaseTime);
+        gainNode.gain.linearRampToValueAtTime(0, now + duration);
+
+        // Connect nodes
+        oscillator.connect(filterNode);
+        filterNode.connect(gainNode);
+        gainNode.connect(this.masterGain);
+
+        // Start and stop
+        oscillator.start(now);
+        oscillator.stop(now + duration);
+
+        // Track active oscillator
+        this.activeOscillators.set(key, { oscillator, gainNode });
+
+        // Clean up after it stops
+        oscillator.onended = () => {
+            this.activeOscillators.delete(key);
+        };
     }
 
-    toggleDisc(index, animate = true) {
-        const disc = this.discs[index];
-        disc.state = !disc.state;
+    // Update a single dot
+    setDot(index, state, animate = true) {
+        const dot = this.dots[index];
+
+        // Only update if state changed
+        if (this.previousState[index] === state) return;
+
+        this.previousState[index] = state;
+        dot.state = state;
 
         if (animate) {
-            disc.element.classList.add('flipping');
+            dot.element.classList.add('flipping');
             setTimeout(() => {
-                disc.element.classList.remove('flipping');
-            }, 300);
+                dot.element.classList.remove('flipping');
+            }, 200);
+
+            // Play sound when flipping to yellow (person detected)
+            if (state) {
+                this.playDroneSound(dot.row, dot.col);
+            }
         }
 
-        if (disc.state) {
-            disc.element.classList.remove('flipped');
+        if (state) {
+            dot.element.classList.remove('flipped'); // Show yellow
         } else {
-            disc.element.classList.add('flipped');
-        }
-
-        if (animate) {
-            this.playFlipSound();
+            dot.element.classList.add('flipped'); // Show black
         }
     }
 
-    setDisc(index, state, animate = true) {
-        const disc = this.discs[index];
-        if (disc.state !== state) {
-            this.toggleDisc(index, animate);
-        }
-    }
-
-    clear(animate = true) {
-        this.discs.forEach((disc, index) => {
-            if (animate) {
-                setTimeout(() => {
-                    this.setDisc(index, false, true);
-                }, Math.random() * this.animationSpeed);
-            } else {
-                this.setDisc(index, false, false);
-            }
-        });
-    }
-
-    fill(animate = true) {
-        this.discs.forEach((disc, index) => {
-            if (animate) {
-                setTimeout(() => {
-                    this.setDisc(index, true, true);
-                }, Math.random() * this.animationSpeed);
-            } else {
-                this.setDisc(index, true, false);
-            }
-        });
-    }
-
-    random() {
-        this.discs.forEach((disc, index) => {
-            setTimeout(() => {
-                this.setDisc(index, Math.random() > 0.5, true);
-            }, Math.random() * this.animationSpeed * 2);
-        });
-    }
-
-    checkerboard() {
-        this.discs.forEach((disc, index) => {
-            const state = (disc.row + disc.col) % 2 === 0;
-            setTimeout(() => {
-                this.setDisc(index, state, true);
-            }, (disc.row * this.cols + disc.col) * 10);
-        });
-    }
-
-    wave() {
-        let delay = 0;
-        for (let col = 0; col < this.cols; col++) {
-            for (let row = 0; row < this.rows; row++) {
-                const index = row * this.cols + col;
-                setTimeout(() => {
-                    this.setDisc(index, true, true);
-                    setTimeout(() => {
-                        this.setDisc(index, false, true);
-                    }, 300);
-                }, delay);
-            }
-            delay += 50;
-        }
-    }
-
-    displayText(text) {
-        if (this.scrollInterval) {
-            clearInterval(this.scrollInterval);
-            this.scrollInterval = null;
-        }
-
-        this.clear(false);
-        const bitmap = this.textToBitmap(text);
-
-        bitmap.forEach((row, rowIndex) => {
-            row.forEach((pixel, colIndex) => {
-                if (rowIndex < this.rows && colIndex < this.cols) {
-                    const index = rowIndex * this.cols + colIndex;
-                    setTimeout(() => {
-                        this.setDisc(index, pixel, true);
-                    }, (rowIndex * this.cols + colIndex) * 5);
+    // Start camera capture
+    async startCamera() {
+        try {
+            this.stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: { ideal: 1280 },
+                    height: { ideal: 1280 },
+                    facingMode: 'user'
                 }
             });
-        });
+
+            this.video.srcObject = this.stream;
+            this.cameraActive = true;
+
+            document.getElementById('startCamera').disabled = true;
+
+            // Wait for video to be ready
+            this.video.onloadedmetadata = () => {
+                this.startProcessing();
+            };
+
+        } catch (error) {
+            console.error('Camera error:', error);
+            alert('Could not access camera. Please check permissions.');
+        }
     }
 
-    scrollTextContinuous(text) {
-        if (this.scrollInterval) {
-            clearInterval(this.scrollInterval);
+    stopCamera() {
+        if (this.stream) {
+            this.stream.getTracks().forEach(track => track.stop());
+            this.stream = null;
         }
-
-        const bitmap = this.textToBitmap(text + '   '); // Add spacing
-        let offset = 0;
-
-        this.scrollInterval = setInterval(() => {
-            for (let row = 0; row < this.rows; row++) {
-                for (let col = 0; col < this.cols; col++) {
-                    const bitmapCol = (col + offset) % bitmap[0].length;
-                    const index = row * this.cols + col;
-                    const state = bitmap[row] && bitmap[row][bitmapCol] ? true : false;
-                    this.setDisc(index, state, false);
-                }
-            }
-            offset = (offset + 1) % bitmap[0].length;
-        }, 150);
+        this.cameraActive = false;
+        if (this.updateInterval) {
+            clearInterval(this.updateInterval);
+            this.updateInterval = null;
+        }
+        document.getElementById('startCamera').disabled = false;
     }
 
-    textToBitmap(text) {
-        // Simple 5x7 bitmap font
-        const font = {
-            'A': [[0,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1]],
-            'B': [[1,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,0]],
-            'C': [[0,1,1,1,1],[1,0,0,0,0],[1,0,0,0,0],[1,0,0,0,0],[1,0,0,0,0],[1,0,0,0,0],[0,1,1,1,1]],
-            'D': [[1,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,0]],
-            'E': [[1,1,1,1,1],[1,0,0,0,0],[1,0,0,0,0],[1,1,1,1,0],[1,0,0,0,0],[1,0,0,0,0],[1,1,1,1,1]],
-            'F': [[1,1,1,1,1],[1,0,0,0,0],[1,0,0,0,0],[1,1,1,1,0],[1,0,0,0,0],[1,0,0,0,0],[1,0,0,0,0]],
-            'G': [[0,1,1,1,1],[1,0,0,0,0],[1,0,0,0,0],[1,0,1,1,1],[1,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0]],
-            'H': [[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1]],
-            'I': [[1,1,1,1,1],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[1,1,1,1,1]],
-            'J': [[0,0,0,0,1],[0,0,0,0,1],[0,0,0,0,1],[0,0,0,0,1],[0,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0]],
-            'K': [[1,0,0,0,1],[1,0,0,1,0],[1,0,1,0,0],[1,1,0,0,0],[1,0,1,0,0],[1,0,0,1,0],[1,0,0,0,1]],
-            'L': [[1,0,0,0,0],[1,0,0,0,0],[1,0,0,0,0],[1,0,0,0,0],[1,0,0,0,0],[1,0,0,0,0],[1,1,1,1,1]],
-            'M': [[1,0,0,0,1],[1,1,0,1,1],[1,0,1,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1]],
-            'N': [[1,0,0,0,1],[1,1,0,0,1],[1,0,1,0,1],[1,0,0,1,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1]],
-            'O': [[0,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0]],
-            'P': [[1,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,0],[1,0,0,0,0],[1,0,0,0,0],[1,0,0,0,0]],
-            'Q': [[0,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,1,0,1],[1,0,0,1,0],[0,1,1,0,1]],
-            'R': [[1,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,0],[1,0,1,0,0],[1,0,0,1,0],[1,0,0,0,1]],
-            'S': [[0,1,1,1,1],[1,0,0,0,0],[1,0,0,0,0],[0,1,1,1,0],[0,0,0,0,1],[0,0,0,0,1],[1,1,1,1,0]],
-            'T': [[1,1,1,1,1],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0]],
-            'U': [[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0]],
-            'V': [[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[0,1,0,1,0],[0,0,1,0,0]],
-            'W': [[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,1,0,1],[1,1,0,1,1],[1,0,0,0,1]],
-            'X': [[1,0,0,0,1],[1,0,0,0,1],[0,1,0,1,0],[0,0,1,0,0],[0,1,0,1,0],[1,0,0,0,1],[1,0,0,0,1]],
-            'Y': [[1,0,0,0,1],[1,0,0,0,1],[0,1,0,1,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0]],
-            'Z': [[1,1,1,1,1],[0,0,0,0,1],[0,0,0,1,0],[0,0,1,0,0],[0,1,0,0,0],[1,0,0,0,0],[1,1,1,1,1]],
-            '0': [[0,1,1,1,0],[1,0,0,0,1],[1,0,0,1,1],[1,0,1,0,1],[1,1,0,0,1],[1,0,0,0,1],[0,1,1,1,0]],
-            '1': [[0,0,1,0,0],[0,1,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,1,1,1,0]],
-            '2': [[0,1,1,1,0],[1,0,0,0,1],[0,0,0,0,1],[0,0,0,1,0],[0,0,1,0,0],[0,1,0,0,0],[1,1,1,1,1]],
-            '3': [[1,1,1,1,0],[0,0,0,0,1],[0,0,0,0,1],[0,1,1,1,0],[0,0,0,0,1],[0,0,0,0,1],[1,1,1,1,0]],
-            '4': [[0,0,0,1,0],[0,0,1,1,0],[0,1,0,1,0],[1,0,0,1,0],[1,1,1,1,1],[0,0,0,1,0],[0,0,0,1,0]],
-            '5': [[1,1,1,1,1],[1,0,0,0,0],[1,1,1,1,0],[0,0,0,0,1],[0,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0]],
-            '6': [[0,1,1,1,0],[1,0,0,0,0],[1,0,0,0,0],[1,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0]],
-            '7': [[1,1,1,1,1],[0,0,0,0,1],[0,0,0,1,0],[0,0,1,0,0],[0,1,0,0,0],[0,1,0,0,0],[0,1,0,0,0]],
-            '8': [[0,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0]],
-            '9': [[0,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[0,1,1,1,1],[0,0,0,0,1],[0,0,0,0,1],[0,1,1,1,0]],
-            ' ': [[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0]],
-            '!': [[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,0,0,0],[0,0,1,0,0]],
-            '.': [[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,1,0,0]],
-        };
-
-        const upperText = text.toUpperCase();
-        const bitmap = Array(7).fill(null).map(() => []);
-
-        for (let char of upperText) {
-            const charBitmap = font[char] || font[' '];
-            for (let row = 0; row < 7; row++) {
-                bitmap[row] = bitmap[row].concat(charBitmap[row], [0]); // Add spacing between chars
-            }
+    startProcessing() {
+        if (this.updateInterval) {
+            clearInterval(this.updateInterval);
         }
 
-        // Pad to fill display height
-        while (bitmap.length < this.rows) {
-            bitmap.push(Array(bitmap[0].length).fill(0));
-        }
-
-        return bitmap;
+        this.updateInterval = setInterval(() => {
+            this.processFrame();
+        }, this.updateSpeed);
     }
 
-    setAnimationSpeed(speed) {
-        this.animationSpeed = speed;
+    processFrame() {
+        if (!this.cameraActive || this.video.readyState < 2) {
+            return;
+        }
+
+        // Draw video frame to canvas
+        this.ctx.save();
+
+        // Mirror if enabled
+        if (this.mirrorCamera) {
+            this.ctx.scale(-1, 1);
+            this.ctx.drawImage(this.video, -this.canvas.width, 0, this.canvas.width, this.canvas.height);
+        } else {
+            this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
+        }
+
+        this.ctx.restore();
+
+        // Get image data
+        const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+        const data = imageData.data;
+
+        // Process each pixel
+        for (let i = 0; i < this.dots.length; i++) {
+            const pixelIndex = i * 4;
+
+            // Convert to grayscale
+            let gray = (data[pixelIndex] + data[pixelIndex + 1] + data[pixelIndex + 2]) / 3;
+
+            // Apply brightness
+            gray += this.brightness;
+
+            // Apply contrast
+            gray = ((gray - 128) * (this.contrast / 100)) + 128;
+
+            // Clamp
+            gray = Math.max(0, Math.min(255, gray));
+
+            // Threshold to binary
+            const state = gray > this.threshold;
+
+            this.setDot(i, state, true);
+        }
+    }
+
+    setThreshold(value) {
+        this.threshold = parseInt(value);
+    }
+
+    setBrightness(value) {
+        this.brightness = parseInt(value);
+    }
+
+    setContrast(value) {
+        this.contrast = parseInt(value);
+    }
+
+    setUpdateSpeed(value) {
+        this.updateSpeed = parseInt(value);
+        if (this.cameraActive) {
+            this.startProcessing();
+        }
     }
 
     setSoundEnabled(enabled) {
         this.soundEnabled = enabled;
-        if (enabled && !this.audioContext) {
-            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        if (enabled) {
+            this.initAudio();
+        }
+    }
+
+    setVolume(value) {
+        this.volume = value / 100;
+        if (this.masterGain) {
+            this.masterGain.gain.value = this.volume;
+        }
+    }
+
+    setMirror(enabled) {
+        this.mirrorCamera = enabled;
+        if (enabled) {
+            this.video.classList.remove('no-mirror');
+        } else {
+            this.video.classList.add('no-mirror');
         }
     }
 }
 
 // Global instance
-let display = new FlipDiscDisplay();
+let display = new CameraFlipDotDisplay();
 
 // Control functions
-function setGridSize(cols, rows) {
-    display = new FlipDiscDisplay(cols, rows);
+async function startCamera() {
+    await display.startCamera();
 }
 
-function showPattern(pattern) {
-    switch(pattern) {
-        case 'wave':
-            display.wave();
-            break;
-        case 'random':
-            display.random();
-            break;
-        case 'checkerboard':
-            display.checkerboard();
-            break;
-        case 'clear':
-            display.clear(true);
-            break;
-        case 'fill':
-            display.fill(true);
-            break;
-    }
+function stopCamera() {
+    display.stopCamera();
 }
 
-function displayText() {
-    const text = document.getElementById('textInput').value || 'HELLO';
-    display.displayText(text);
+function updateThreshold(value) {
+    display.setThreshold(value);
+    document.getElementById('thresholdValue').textContent = value;
 }
 
-function scrollText() {
-    const text = document.getElementById('textInput').value || 'FLIP DISC DISPLAY';
-    display.scrollTextContinuous(text);
+function updateBrightness(value) {
+    display.setBrightness(value);
+    document.getElementById('brightnessValue').textContent = value;
+}
+
+function updateContrast(value) {
+    display.setContrast(value);
+    document.getElementById('contrastValue').textContent = value;
 }
 
 function updateSpeed(value) {
-    display.setAnimationSpeed(value);
-    document.getElementById('speedValue').textContent = value + 'ms';
+    display.setUpdateSpeed(value);
+    document.getElementById('updateSpeedValue').textContent = value + 'ms';
 }
 
 function toggleSound(enabled) {
     display.setSoundEnabled(enabled);
+}
+
+function updateVolume(value) {
+    display.setVolume(value);
+    document.getElementById('volumeValue').textContent = value + '%';
+}
+
+function toggleMirror(enabled) {
+    display.setMirror(enabled);
 }
 
 function toggleFullscreen() {
@@ -332,7 +363,7 @@ function toggleFullscreen() {
     }
 }
 
-// Exit fullscreen mode
+// Exit fullscreen
 document.addEventListener('fullscreenchange', () => {
     if (!document.fullscreenElement) {
         document.body.classList.remove('fullscreen');
@@ -343,16 +374,11 @@ document.addEventListener('fullscreenchange', () => {
 document.addEventListener('keydown', (e) => {
     if (e.key === 'f' || e.key === 'F') {
         toggleFullscreen();
-    } else if (e.key === 'c' || e.key === 'C') {
-        display.clear(true);
-    } else if (e.key === 'r' || e.key === 'R') {
-        display.random();
     }
 });
 
-// Initialize with a welcome animation
+// Auto-start camera on load
 window.addEventListener('load', () => {
-    setTimeout(() => {
-        display.displayText('FLIP DISC');
-    }, 500);
+    console.log('Camera Flip-Dot Display Ready');
+    console.log('Click "Start Camera" to begin');
 });

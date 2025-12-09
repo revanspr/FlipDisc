@@ -3,55 +3,80 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flip Disc Display Simulator</title>
+    <title>Camera Flip-Dot Display</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
+        <div class="camera-section">
+            <video id="webcam" autoplay playsinline></video>
+            <canvas id="processingCanvas" style="display: none;"></canvas>
+        </div>
+
         <div class="display-wrapper">
-            <div id="flipDiscDisplay" class="flip-disc-display"></div>
+            <div id="flipDotDisplay" class="flip-dot-display"></div>
         </div>
 
         <div class="controls">
-            <h2>Controls</h2>
+            <h2>Camera Flip-Dot Display</h2>
+
             <div class="control-group">
-                <label>Display Size:</label>
-                <button onclick="setGridSize(20, 7)">20x7 (Small)</button>
-                <button onclick="setGridSize(28, 13)">28x13 (Medium)</button>
-                <button onclick="setGridSize(42, 20)">42x20 (Large)</button>
+                <button id="startCamera" onclick="startCamera()">Start Camera</button>
+                <button onclick="stopCamera()">Stop Camera</button>
             </div>
 
             <div class="control-group">
-                <label>Patterns:</label>
-                <button onclick="showPattern('wave')">Wave</button>
-                <button onclick="showPattern('random')">Random</button>
-                <button onclick="showPattern('checkerboard')">Checkerboard</button>
-                <button onclick="showPattern('clear')">Clear</button>
-                <button onclick="showPattern('fill')">Fill</button>
+                <label>Contrast Threshold:</label>
+                <input type="range" id="threshold" min="0" max="255" value="128" oninput="updateThreshold(this.value)">
+                <span id="thresholdValue">128</span>
             </div>
 
             <div class="control-group">
-                <label>Text Display:</label>
-                <input type="text" id="textInput" placeholder="Enter text..." maxlength="20">
-                <button onclick="displayText()">Show Text</button>
-                <button onclick="scrollText()">Scroll Text</button>
+                <label>Brightness:</label>
+                <input type="range" id="brightness" min="-100" max="100" value="0" oninput="updateBrightness(this.value)">
+                <span id="brightnessValue">0</span>
             </div>
 
             <div class="control-group">
-                <label>Animation Speed:</label>
-                <input type="range" id="speedControl" min="50" max="500" value="200" oninput="updateSpeed(this.value)">
-                <span id="speedValue">200ms</span>
+                <label>Contrast:</label>
+                <input type="range" id="contrast" min="0" max="200" value="100" oninput="updateContrast(this.value)">
+                <span id="contrastValue">100</span>
+            </div>
+
+            <div class="control-group">
+                <label>Update Speed (ms):</label>
+                <input type="range" id="updateSpeed" min="50" max="500" value="100" oninput="updateSpeed(this.value)">
+                <span id="updateSpeedValue">100ms</span>
             </div>
 
             <div class="control-group">
                 <label>
                     <input type="checkbox" id="soundToggle" checked onchange="toggleSound(this.checked)">
-                    Enable Sound
+                    Enable Drone Synth
+                </label>
+            </div>
+
+            <div class="control-group">
+                <label>Synth Volume:</label>
+                <input type="range" id="volume" min="0" max="100" value="30" oninput="updateVolume(this.value)">
+                <span id="volumeValue">30%</span>
+            </div>
+
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="mirrorToggle" checked onchange="toggleMirror(this.checked)">
+                    Mirror Camera
                 </label>
             </div>
 
             <div class="control-group">
                 <button onclick="toggleFullscreen()" class="fullscreen-btn">Toggle Fullscreen</button>
+            </div>
+
+            <div class="info">
+                <p>Display: 120x120 dots</p>
+                <p>Pitch: Mapped to vertical position (higher = higher pitch)</p>
+                <p>Press F for fullscreen, ESC to exit</p>
             </div>
         </div>
     </div>
