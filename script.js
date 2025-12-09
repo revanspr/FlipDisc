@@ -36,6 +36,7 @@ class CameraFlipDotDisplay {
         this.masterGain = null;
         this.delayNode = null;
         this.delayFeedback = null;
+        this.delayFilter = null;
         this.delayWet = null;
         this.volume = 0.2;
         this.activeOscillators = new Map();
@@ -66,14 +67,21 @@ class CameraFlipDotDisplay {
             this.delayNode.delayTime.value = 0.8; // 800ms delay for seamless blending
 
             this.delayFeedback = this.audioContext.createGain();
-            this.delayFeedback.gain.value = 0.55; // Moderate feedback - no squeal
+            this.delayFeedback.gain.value = 0.68; // Higher feedback for more tail
+
+            // Low-pass filter in feedback loop to tame harshness
+            this.delayFilter = this.audioContext.createBiquadFilter();
+            this.delayFilter.type = 'lowpass';
+            this.delayFilter.frequency.value = 2000; // Roll off highs in repeats
+            this.delayFilter.Q.value = 0.5; // Gentle slope
 
             this.delayWet = this.audioContext.createGain();
-            this.delayWet.gain.value = 0.65; // Balanced wet/dry mix
+            this.delayWet.gain.value = 0.7; // More delay for lush sound
 
-            // Create delay feedback loop
+            // Create delay feedback loop with filter
             this.delayNode.connect(this.delayFeedback);
-            this.delayFeedback.connect(this.delayNode);
+            this.delayFeedback.connect(this.delayFilter);
+            this.delayFilter.connect(this.delayNode);
             this.delayNode.connect(this.delayWet);
 
             // Master gain
