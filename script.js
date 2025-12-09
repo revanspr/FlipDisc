@@ -1,71 +1,57 @@
-// Camera Flip-Dot Display with Drone Synthesizer
+// Camera Flip-Dot Display with Drone Synthesizer (Optimized Canvas Version)
 class CameraFlipDotDisplay {
     constructor() {
         this.cols = 120;
         this.rows = 120;
-        this.dots = [];
-        this.previousState = [];
+        this.dotSize = 6;
+        this.dotGap = 1;
+
+        // Canvas elements
+        this.displayCanvas = document.getElementById('flipDotDisplay');
+        this.displayCtx = this.displayCanvas.getContext('2d');
+        this.video = document.getElementById('webcam');
+        this.processingCanvas = document.getElementById('processingCanvas');
+        this.processingCtx = this.processingCanvas.getContext('2d');
+
+        // State tracking
+        this.currentState = new Uint8Array(this.cols * this.rows);
+        this.previousState = new Uint8Array(this.cols * this.rows);
 
         // Camera settings
-        this.video = document.getElementById('webcam');
-        this.canvas = document.getElementById('processingCanvas');
-        this.ctx = this.canvas.getContext('2d');
-        this.canvas.width = this.cols;
-        this.canvas.height = this.rows;
+        this.processingCanvas.width = this.cols;
+        this.processingCanvas.height = this.rows;
         this.stream = null;
         this.cameraActive = false;
         this.mirrorCamera = true;
+        this.animationFrameId = null;
 
         // Image processing settings
         this.threshold = 128;
         this.brightness = 0;
         this.contrast = 100;
-        this.updateSpeed = 100;
-        this.updateInterval = null;
 
         // Synthesizer settings
         this.audioContext = null;
         this.soundEnabled = true;
         this.masterGain = null;
-        this.volume = 0.3;
+        this.volume = 0.2;
         this.activeOscillators = new Map();
+        this.maxOscillators = 30; // Limit simultaneous sounds for performance
 
         this.init();
     }
 
     init() {
-        const display = document.getElementById('flipDotDisplay');
-        display.innerHTML = '';
-        this.dots = [];
-        this.previousState = [];
-
-        // Create 120x120 grid
-        for (let row = 0; row < this.rows; row++) {
-            for (let col = 0; col < this.cols; col++) {
-                const dot = this.createDot(row, col);
-                display.appendChild(dot);
-                this.dots.push({
-                    element: dot,
-                    row: row,
-                    col: col,
-                    state: false
-                });
-                this.previousState.push(false);
-            }
-        }
-
-        // Initialize audio
+        this.updateCanvasSize();
+        this.clearDisplay();
         this.initAudio();
     }
 
-    createDot(row, col) {
-        const dot = document.createElement('div');
-        dot.className = 'dot flipped'; // Start with black
-        dot.innerHTML = `
-            <div class="dot-face dot-front"></div>
-            <div class="dot-face dot-back"></div>
-        `;
-        return dot;
+    updateCanvasSize() {
+        const totalWidth = this.cols * (this.dotSize + this.dotGap);
+        const totalHeight = this.rows * (this.dotSize + this.dotGap);
+        this.displayCanvas.width = totalWidth;
+        this.displayCanvas.height = totalHeight;
     }
 
     initAudio() {
@@ -77,95 +63,99 @@ class CameraFlipDotDisplay {
         }
     }
 
+    clearDisplay() {
+        this.displayCtx.fillStyle = '#0a0a0a';
+        this.displayCtx.fillRect(0, 0, this.displayCanvas.width, this.displayCanvas.height);
+    }
+
     // Drone synthesizer - vertical position maps to pitch
-    playDroneSound(row, col, duration = 0.3) {
+    playDroneSound(row, col) {
         if (!this.soundEnabled || !this.audioContext) return;
+        if (this.activeOscillators.size >= this.maxOscillators) return;
 
         const key = `${row}-${col}`;
-
-        // If already playing, don't retrigger
         if (this.activeOscillators.has(key)) return;
 
         // Map row to frequency (inverted: row 0 = high pitch, row 119 = low pitch)
-        const minFreq = 60;   // Low C (around C2)
-        const maxFreq = 800;  // Higher pitch
-        const normalizedRow = 1 - (row / this.rows); // Invert so top = high
+        const minFreq = 80;
+        const maxFreq = 600;
+        const normalizedRow = 1 - (row / this.rows);
         const frequency = minFreq + (maxFreq - minFreq) * normalizedRow;
 
-        // Create oscillator with subtle detuning
+        // Create oscillator
         const oscillator = this.audioContext.createOscillator();
         const gainNode = this.audioContext.createGain();
         const filterNode = this.audioContext.createBiquadFilter();
 
-        // Oscillator settings - sine wave for smooth drone
         oscillator.type = 'sine';
         oscillator.frequency.value = frequency;
+        oscillator.detune.value = (Math.random() - 0.5) * 15;
 
-        // Subtle frequency modulation for organic feel
-        const detune = (Math.random() - 0.5) * 10;
-        oscillator.detune.value = detune;
-
-        // Low-pass filter for warmth
         filterNode.type = 'lowpass';
-        filterNode.frequency.value = frequency * 2;
+        filterNode.frequency.value = frequency * 2.5;
         filterNode.Q.value = 1;
 
-        // Gain envelope - slow attack and release for drone effect
         const now = this.audioContext.currentTime;
-        const attackTime = 0.05;
-        const releaseTime = 0.2;
-        const peakGain = 0.015; // Quiet individual dots
+        const duration = 0.25;
+        const attackTime = 0.04;
+        const releaseTime = 0.15;
+        const peakGain = 0.012;
 
         gainNode.gain.setValueAtTime(0, now);
         gainNode.gain.linearRampToValueAtTime(peakGain, now + attackTime);
         gainNode.gain.setValueAtTime(peakGain, now + duration - releaseTime);
         gainNode.gain.linearRampToValueAtTime(0, now + duration);
 
-        // Connect nodes
         oscillator.connect(filterNode);
         filterNode.connect(gainNode);
         gainNode.connect(this.masterGain);
 
-        // Start and stop
         oscillator.start(now);
         oscillator.stop(now + duration);
 
-        // Track active oscillator
         this.activeOscillators.set(key, { oscillator, gainNode });
 
-        // Clean up after it stops
         oscillator.onended = () => {
             this.activeOscillators.delete(key);
         };
     }
 
-    // Update a single dot
-    setDot(index, state, animate = true) {
-        const dot = this.dots[index];
+    // Render dots using canvas
+    renderDots() {
+        this.clearDisplay();
 
-        // Only update if state changed
-        if (this.previousState[index] === state) return;
+        for (let row = 0; row < this.rows; row++) {
+            for (let col = 0; col < this.cols; col++) {
+                const index = row * this.cols + col;
+                const state = this.currentState[index];
 
-        this.previousState[index] = state;
-        dot.state = state;
+                const x = col * (this.dotSize + this.dotGap);
+                const y = row * (this.dotSize + this.dotGap);
 
-        if (animate) {
-            dot.element.classList.add('flipping');
-            setTimeout(() => {
-                dot.element.classList.remove('flipping');
-            }, 200);
+                // Draw dot
+                this.displayCtx.fillStyle = state ? '#FFD700' : '#0a0a0a';
+                this.displayCtx.beginPath();
+                this.displayCtx.arc(
+                    x + this.dotSize / 2,
+                    y + this.dotSize / 2,
+                    this.dotSize / 2,
+                    0,
+                    Math.PI * 2
+                );
+                this.displayCtx.fill();
 
-            // Play sound when flipping to yellow (person detected)
-            if (state) {
-                this.playDroneSound(dot.row, dot.col);
+                // Check if state changed and trigger sound
+                if (state && !this.previousState[index]) {
+                    // Randomly trigger sound (not every dot, to avoid overload)
+                    if (Math.random() > 0.85) {
+                        this.playDroneSound(row, col);
+                    }
+                }
             }
         }
 
-        if (state) {
-            dot.element.classList.remove('flipped'); // Show yellow
-        } else {
-            dot.element.classList.add('flipped'); // Show black
-        }
+        // Update previous state
+        this.previousState.set(this.currentState);
     }
 
     // Start camera capture
@@ -186,7 +176,6 @@ class CameraFlipDotDisplay {
 
             document.getElementById('startCamera').disabled = true;
 
-            // Wait for video to be ready
             this.video.onloadedmetadata = () => {
                 console.log('Video metadata loaded, starting playback...');
                 this.video.play();
@@ -206,53 +195,64 @@ class CameraFlipDotDisplay {
             this.stream = null;
         }
         this.cameraActive = false;
-        if (this.updateInterval) {
-            clearInterval(this.updateInterval);
-            this.updateInterval = null;
+        if (this.animationFrameId) {
+            cancelAnimationFrame(this.animationFrameId);
+            this.animationFrameId = null;
         }
         document.getElementById('startCamera').disabled = false;
     }
 
     startProcessing() {
-        if (this.updateInterval) {
-            clearInterval(this.updateInterval);
-        }
+        const processLoop = () => {
+            if (!this.cameraActive) return;
 
-        this.updateInterval = setInterval(() => {
             this.processFrame();
-        }, this.updateSpeed);
+            this.animationFrameId = requestAnimationFrame(processLoop);
+        };
+
+        processLoop();
     }
 
     processFrame() {
-        if (!this.cameraActive) {
-            console.log('Camera not active');
+        if (!this.cameraActive || this.video.readyState < 2) {
             return;
         }
 
-        if (this.video.readyState < 2) {
-            console.log('Video not ready, readyState:', this.video.readyState);
-            return;
-        }
+        // Draw video frame to processing canvas
+        this.processingCtx.save();
 
-        // Draw video frame to canvas
-        this.ctx.save();
-
-        // Mirror if enabled
         if (this.mirrorCamera) {
-            this.ctx.scale(-1, 1);
-            this.ctx.drawImage(this.video, -this.canvas.width, 0, this.canvas.width, this.canvas.height);
+            this.processingCtx.scale(-1, 1);
+            this.processingCtx.drawImage(
+                this.video,
+                -this.processingCanvas.width,
+                0,
+                this.processingCanvas.width,
+                this.processingCanvas.height
+            );
         } else {
-            this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
+            this.processingCtx.drawImage(
+                this.video,
+                0,
+                0,
+                this.processingCanvas.width,
+                this.processingCanvas.height
+            );
         }
 
-        this.ctx.restore();
+        this.processingCtx.restore();
 
         // Get image data
-        const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+        const imageData = this.processingCtx.getImageData(
+            0,
+            0,
+            this.processingCanvas.width,
+            this.processingCanvas.height
+        );
         const data = imageData.data;
 
         // Process each pixel
-        for (let i = 0; i < this.dots.length; i++) {
+        for (let i = 0; i < this.cols * this.rows; i++) {
             const pixelIndex = i * 4;
 
             // Convert to grayscale
@@ -268,10 +268,11 @@ class CameraFlipDotDisplay {
             gray = Math.max(0, Math.min(255, gray));
 
             // Threshold to binary
-            const state = gray > this.threshold;
-
-            this.setDot(i, state, true);
+            this.currentState[i] = gray > this.threshold ? 1 : 0;
         }
+
+        // Render the dots
+        this.renderDots();
     }
 
     setThreshold(value) {
@@ -284,13 +285,6 @@ class CameraFlipDotDisplay {
 
     setContrast(value) {
         this.contrast = parseInt(value);
-    }
-
-    setUpdateSpeed(value) {
-        this.updateSpeed = parseInt(value);
-        if (this.cameraActive) {
-            this.startProcessing();
-        }
     }
 
     setSoundEnabled(enabled) {
@@ -314,6 +308,12 @@ class CameraFlipDotDisplay {
         } else {
             this.video.classList.add('no-mirror');
         }
+    }
+
+    setDotSize(value) {
+        this.dotSize = parseInt(value);
+        this.updateCanvasSize();
+        this.renderDots();
     }
 }
 
@@ -344,11 +344,6 @@ function updateContrast(value) {
     document.getElementById('contrastValue').textContent = value;
 }
 
-function updateSpeed(value) {
-    display.setUpdateSpeed(value);
-    document.getElementById('updateSpeedValue').textContent = value + 'ms';
-}
-
 function toggleSound(enabled) {
     display.setSoundEnabled(enabled);
 }
@@ -360,6 +355,11 @@ function updateVolume(value) {
 
 function toggleMirror(enabled) {
     display.setMirror(enabled);
+}
+
+function updateDotSize(value) {
+    display.setDotSize(value);
+    document.getElementById('dotSizeValue').textContent = value + 'px';
 }
 
 function toggleFullscreen() {
@@ -388,8 +388,8 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-// Auto-start camera on load
+// Ready message
 window.addEventListener('load', () => {
-    console.log('Camera Flip-Dot Display Ready');
+    console.log('Camera Flip-Dot Display Ready - Optimized Canvas Version');
     console.log('Click "Start Camera" to begin');
 });
