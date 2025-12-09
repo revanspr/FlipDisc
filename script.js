@@ -68,7 +68,7 @@ class CameraFlipDotDisplay {
         this.displayCtx.fillRect(0, 0, this.displayCanvas.width, this.displayCanvas.height);
     }
 
-    // Drone synthesizer - vertical position maps to pitch
+    // Theremin-style synthesizer - vertical position maps to pitch
     playDroneSound(row, col) {
         if (!this.soundEnabled || !this.audioContext) return;
         if (this.activeOscillators.size >= this.maxOscillators) return;
@@ -76,67 +76,86 @@ class CameraFlipDotDisplay {
         const key = `${row}-${col}`;
         if (this.activeOscillators.has(key)) return;
 
-        // Map row to frequency with much wider range and exponential curve for more contrast
-        const minFreq = 40;   // Very deep bass
-        const maxFreq = 1600; // High crystalline tones
+        // Map row to frequency - theremin-style range
+        const minFreq = 65;   // C2
+        const maxFreq = 2093; // C7 - wide theremin range
         const normalizedRow = 1 - (row / this.rows);
 
-        // Exponential mapping for more dramatic pitch separation
+        // Exponential mapping for musical pitch separation
         const frequency = minFreq * Math.pow(maxFreq / minFreq, normalizedRow);
 
-        // Create two oscillators for richer sound (fundamental + harmonic)
-        const osc1 = this.audioContext.createOscillator();
-        const osc2 = this.audioContext.createOscillator();
-        const gainNode = this.audioContext.createGain();
+        // Create oscillators for theremin-like timbre
+        const carrier = this.audioContext.createOscillator();
+        const vibrato = this.audioContext.createOscillator();
+        const vibratoGain = this.audioContext.createGain();
+        const tremolo = this.audioContext.createOscillator();
+        const tremoloGain = this.audioContext.createGain();
+        const masterGain = this.audioContext.createGain();
         const filterNode = this.audioContext.createBiquadFilter();
-        const reverbGain = this.audioContext.createGain();
 
-        // Fundamental oscillator - triangle wave for warmth
-        osc1.type = 'triangle';
-        osc1.frequency.value = frequency;
-        osc1.detune.value = (Math.random() - 0.5) * 8;
+        // Main carrier - sine wave for pure theremin tone
+        carrier.type = 'sine';
+        carrier.frequency.value = frequency;
 
-        // Harmonic oscillator - adds shimmer and depth
-        osc2.type = 'sine';
-        osc2.frequency.value = frequency * 2.01; // Slightly detuned harmonic
-        osc2.detune.value = (Math.random() - 0.5) * 12;
+        // Vibrato (pitch modulation) - subtle wavering
+        vibrato.type = 'sine';
+        vibrato.frequency.value = 5.5 + Math.random() * 1.5; // 5-7 Hz vibrato
+        vibratoGain.gain.value = frequency * 0.008; // Subtle pitch wobble
+        vibrato.connect(vibratoGain);
+        vibratoGain.connect(carrier.frequency);
 
-        // Filter setup - adjust cutoff based on frequency for consistent timbre
+        // Tremolo (amplitude modulation) - subtle volume wavering
+        tremolo.type = 'sine';
+        tremolo.frequency.value = 6.2 + Math.random() * 1.2; // Slightly different rate
+        tremoloGain.gain.value = 0.15; // Subtle tremolo depth
+        tremolo.connect(tremoloGain);
+
+        // Filter for warmth and character
         filterNode.type = 'lowpass';
-        filterNode.frequency.value = frequency * 4;
-        filterNode.Q.value = 2.5; // More resonance for character
-
-        // Reverb-like effect through gain staging
-        reverbGain.gain.value = 0.3;
+        filterNode.frequency.value = frequency * 3.5;
+        filterNode.Q.value = 1.8;
 
         const now = this.audioContext.currentTime;
-        const duration = 0.4; // Longer sustain
-        const attackTime = 0.08; // Slower attack for smoother onset
-        const releaseTime = 0.25; // Longer release for dreamy tail
-        const peakGain = 0.015;
+        const duration = 0.5; // Longer sustain for theremin feel
+        const attackTime = 0.12; // Slow, smooth attack like real theremin
+        const releaseTime = 0.3; // Long release for ethereal tail
+        const peakGain = 0.02;
 
-        // Smooth envelope
-        gainNode.gain.setValueAtTime(0, now);
-        gainNode.gain.linearRampToValueAtTime(peakGain, now + attackTime);
-        gainNode.gain.setValueAtTime(peakGain, now + duration - releaseTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
+        // Theremin-style envelope - smooth and gradual
+        masterGain.gain.setValueAtTime(0, now);
+        masterGain.gain.linearRampToValueAtTime(peakGain, now + attackTime);
 
-        // Connect oscillators in parallel
-        osc1.connect(gainNode);
-        osc2.connect(reverbGain);
-        reverbGain.connect(gainNode);
+        // Add subtle tremolo to gain during sustain
+        const sustainStart = now + attackTime;
+        const sustainEnd = now + duration - releaseTime;
 
-        gainNode.connect(filterNode);
-        filterNode.connect(this.masterGain);
+        // Manual tremolo implementation for more control
+        for (let t = sustainStart; t < sustainEnd; t += 0.02) {
+            const tremAmount = Math.sin((t - sustainStart) * 2 * Math.PI * 6) * 0.002;
+            masterGain.gain.setValueAtTime(peakGain + tremAmount, t);
+        }
 
-        osc1.start(now);
-        osc2.start(now);
-        osc1.stop(now + duration);
-        osc2.stop(now + duration);
+        masterGain.gain.setValueAtTime(peakGain, sustainEnd);
+        masterGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
 
-        this.activeOscillators.set(key, { osc1, osc2, gainNode });
+        // Connect the chain
+        carrier.connect(filterNode);
+        filterNode.connect(masterGain);
+        masterGain.connect(this.masterGain);
 
-        osc1.onended = () => {
+        // Start all oscillators
+        carrier.start(now);
+        vibrato.start(now);
+        tremolo.start(now);
+
+        // Stop all oscillators
+        carrier.stop(now + duration);
+        vibrato.stop(now + duration);
+        tremolo.stop(now + duration);
+
+        this.activeOscillators.set(key, { carrier, vibrato, tremolo, masterGain });
+
+        carrier.onended = () => {
             this.activeOscillators.delete(key);
         };
     }
