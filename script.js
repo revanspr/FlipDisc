@@ -99,9 +99,9 @@ class CameraFlipDotDisplay {
         const key = `${row}-${col}`;
         if (this.activeOscillators.has(key)) return;
 
-        // Map row to frequency - theremin-style range
-        const minFreq = 65;   // C2
-        const maxFreq = 2093; // C7 - wide theremin range
+        // Map row to frequency - extremely wide range
+        const minFreq = 30;   // Very deep sub-bass (below human hearing threshold)
+        const maxFreq = 4000; // Very high crystalline tones
         const normalizedRow = 1 - (row / this.rows);
 
         // Exponential mapping for musical pitch separation
