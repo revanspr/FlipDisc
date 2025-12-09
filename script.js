@@ -76,46 +76,67 @@ class CameraFlipDotDisplay {
         const key = `${row}-${col}`;
         if (this.activeOscillators.has(key)) return;
 
-        // Map row to frequency (inverted: row 0 = high pitch, row 119 = low pitch)
-        const minFreq = 80;
-        const maxFreq = 600;
+        // Map row to frequency with much wider range and exponential curve for more contrast
+        const minFreq = 40;   // Very deep bass
+        const maxFreq = 1600; // High crystalline tones
         const normalizedRow = 1 - (row / this.rows);
-        const frequency = minFreq + (maxFreq - minFreq) * normalizedRow;
 
-        // Create oscillator
-        const oscillator = this.audioContext.createOscillator();
+        // Exponential mapping for more dramatic pitch separation
+        const frequency = minFreq * Math.pow(maxFreq / minFreq, normalizedRow);
+
+        // Create two oscillators for richer sound (fundamental + harmonic)
+        const osc1 = this.audioContext.createOscillator();
+        const osc2 = this.audioContext.createOscillator();
         const gainNode = this.audioContext.createGain();
         const filterNode = this.audioContext.createBiquadFilter();
+        const reverbGain = this.audioContext.createGain();
 
-        oscillator.type = 'sine';
-        oscillator.frequency.value = frequency;
-        oscillator.detune.value = (Math.random() - 0.5) * 15;
+        // Fundamental oscillator - triangle wave for warmth
+        osc1.type = 'triangle';
+        osc1.frequency.value = frequency;
+        osc1.detune.value = (Math.random() - 0.5) * 8;
 
+        // Harmonic oscillator - adds shimmer and depth
+        osc2.type = 'sine';
+        osc2.frequency.value = frequency * 2.01; // Slightly detuned harmonic
+        osc2.detune.value = (Math.random() - 0.5) * 12;
+
+        // Filter setup - adjust cutoff based on frequency for consistent timbre
         filterNode.type = 'lowpass';
-        filterNode.frequency.value = frequency * 2.5;
-        filterNode.Q.value = 1;
+        filterNode.frequency.value = frequency * 4;
+        filterNode.Q.value = 2.5; // More resonance for character
+
+        // Reverb-like effect through gain staging
+        reverbGain.gain.value = 0.3;
 
         const now = this.audioContext.currentTime;
-        const duration = 0.25;
-        const attackTime = 0.04;
-        const releaseTime = 0.15;
-        const peakGain = 0.012;
+        const duration = 0.4; // Longer sustain
+        const attackTime = 0.08; // Slower attack for smoother onset
+        const releaseTime = 0.25; // Longer release for dreamy tail
+        const peakGain = 0.015;
 
+        // Smooth envelope
         gainNode.gain.setValueAtTime(0, now);
         gainNode.gain.linearRampToValueAtTime(peakGain, now + attackTime);
         gainNode.gain.setValueAtTime(peakGain, now + duration - releaseTime);
-        gainNode.gain.linearRampToValueAtTime(0, now + duration);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
 
-        oscillator.connect(filterNode);
-        filterNode.connect(gainNode);
-        gainNode.connect(this.masterGain);
+        // Connect oscillators in parallel
+        osc1.connect(gainNode);
+        osc2.connect(reverbGain);
+        reverbGain.connect(gainNode);
 
-        oscillator.start(now);
-        oscillator.stop(now + duration);
+        gainNode.connect(filterNode);
+        filterNode.connect(this.masterGain);
 
-        this.activeOscillators.set(key, { oscillator, gainNode });
+        osc1.start(now);
+        osc2.start(now);
+        osc1.stop(now + duration);
+        osc2.stop(now + duration);
 
-        oscillator.onended = () => {
+        this.activeOscillators.set(key, { osc1, osc2, gainNode });
+
+        osc1.onended = () => {
             this.activeOscillators.delete(key);
         };
     }
