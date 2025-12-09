@@ -62,14 +62,14 @@ class CameraFlipDotDisplay {
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
             // Create delay effect
-            this.delayNode = this.audioContext.createDelay(2.0);
-            this.delayNode.delayTime.value = 0.35; // 350ms delay
+            this.delayNode = this.audioContext.createDelay(3.0);
+            this.delayNode.delayTime.value = 0.6; // 600ms delay - longer for more blending
 
             this.delayFeedback = this.audioContext.createGain();
-            this.delayFeedback.gain.value = 0.45; // Feedback amount
+            this.delayFeedback.gain.value = 0.65; // Higher feedback for more repeats
 
             this.delayWet = this.audioContext.createGain();
-            this.delayWet.gain.value = 0.5; // Wet/dry mix
+            this.delayWet.gain.value = 0.7; // More wet signal for dreamy effect
 
             // Create delay feedback loop
             this.delayNode.connect(this.delayFeedback);
@@ -139,10 +139,10 @@ class CameraFlipDotDisplay {
         filterNode.Q.value = 1.8;
 
         const now = this.audioContext.currentTime;
-        const duration = 1.2; // Much longer sustain for blending
-        const attackTime = 0.15; // Slow, smooth attack
-        const releaseTime = 0.8; // Very long release for smooth tail
-        const peakGain = 0.018;
+        const duration = 2.0; // Very long sustain for maximum blending
+        const attackTime = 0.2; // Slow, smooth attack
+        const releaseTime = 1.3; // Extra long release for seamless tail
+        const peakGain = 0.015; // Slightly lower to prevent buildup
 
         // Theremin-style envelope - smooth and gradual
         masterGain.gain.setValueAtTime(0, now);
