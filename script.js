@@ -61,15 +61,15 @@ class CameraFlipDotDisplay {
         if (!this.audioContext) {
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
-            // Create delay effect
-            this.delayNode = this.audioContext.createDelay(3.0);
-            this.delayNode.delayTime.value = 0.6; // 600ms delay - longer for more blending
+            // Create delay effect for seamless drone
+            this.delayNode = this.audioContext.createDelay(4.0);
+            this.delayNode.delayTime.value = 0.8; // 800ms delay for seamless blending
 
             this.delayFeedback = this.audioContext.createGain();
-            this.delayFeedback.gain.value = 0.65; // Higher feedback for more repeats
+            this.delayFeedback.gain.value = 0.75; // High feedback for infinite tail
 
             this.delayWet = this.audioContext.createGain();
-            this.delayWet.gain.value = 0.7; // More wet signal for dreamy effect
+            this.delayWet.gain.value = 0.85; // Mostly wet for continuous drone
 
             // Create delay feedback loop
             this.delayNode.connect(this.delayFeedback);
@@ -116,33 +116,33 @@ class CameraFlipDotDisplay {
         const masterGain = this.audioContext.createGain();
         const filterNode = this.audioContext.createBiquadFilter();
 
-        // Main carrier - sine wave for pure theremin tone
-        carrier.type = 'sine';
+        // Main carrier - triangle wave for warmer, richer drone tone
+        carrier.type = 'triangle';
         carrier.frequency.value = frequency;
 
-        // Vibrato (pitch modulation) - subtle wavering
+        // Vibrato (pitch modulation) - very subtle for smoothness
         vibrato.type = 'sine';
-        vibrato.frequency.value = 5.5 + Math.random() * 1.5; // 5-7 Hz vibrato
-        vibratoGain.gain.value = frequency * 0.008; // Subtle pitch wobble
+        vibrato.frequency.value = 3.5 + Math.random() * 1.0; // 3.5-4.5 Hz slower vibrato
+        vibratoGain.gain.value = frequency * 0.005; // Very subtle pitch wobble
         vibrato.connect(vibratoGain);
         vibratoGain.connect(carrier.frequency);
 
-        // Tremolo (amplitude modulation) - subtle volume wavering
+        // Tremolo (amplitude modulation) - minimal for continuity
         tremolo.type = 'sine';
-        tremolo.frequency.value = 6.2 + Math.random() * 1.2; // Slightly different rate
-        tremoloGain.gain.value = 0.15; // Subtle tremolo depth
+        tremolo.frequency.value = 4.5 + Math.random() * 0.8; // Slower tremolo
+        tremoloGain.gain.value = 0.08; // Very subtle tremolo
         tremolo.connect(tremoloGain);
 
         // Filter for warmth and character
         filterNode.type = 'lowpass';
-        filterNode.frequency.value = frequency * 3.5;
-        filterNode.Q.value = 1.8;
+        filterNode.frequency.value = frequency * 4.5;
+        filterNode.Q.value = 2.2; // Higher resonance for more character
 
         const now = this.audioContext.currentTime;
-        const duration = 2.0; // Very long sustain for maximum blending
-        const attackTime = 0.2; // Slow, smooth attack
-        const releaseTime = 1.3; // Extra long release for seamless tail
-        const peakGain = 0.015; // Slightly lower to prevent buildup
+        const duration = 3.5; // Extra long sustain for continuous drone
+        const attackTime = 0.4; // Very slow attack for smooth fade-in
+        const releaseTime = 2.5; // Extremely long release for seamless blending
+        const peakGain = 0.012; // Lower gain to prevent buildup with delay
 
         // Theremin-style envelope - smooth and gradual
         masterGain.gain.setValueAtTime(0, now);
@@ -214,8 +214,8 @@ class CameraFlipDotDisplay {
 
                 // Check if state changed and trigger sound
                 if (state && !this.previousState[index]) {
-                    // Randomly trigger sound (not every dot, to avoid overload)
-                    if (Math.random() > 0.85) {
+                    // Higher trigger rate for more continuous drone
+                    if (Math.random() > 0.70) {
                         this.playDroneSound(row, col);
                     }
                 }
