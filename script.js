@@ -34,6 +34,9 @@ class CameraFlipDotDisplay {
         this.audioContext = null;
         this.soundEnabled = true;
         this.masterGain = null;
+        this.delayNode = null;
+        this.delayFeedback = null;
+        this.delayWet = null;
         this.volume = 0.2;
         this.activeOscillators = new Map();
         this.maxOscillators = 30; // Limit simultaneous sounds for performance
@@ -57,8 +60,28 @@ class CameraFlipDotDisplay {
     initAudio() {
         if (!this.audioContext) {
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+            // Create delay effect
+            this.delayNode = this.audioContext.createDelay(2.0);
+            this.delayNode.delayTime.value = 0.35; // 350ms delay
+
+            this.delayFeedback = this.audioContext.createGain();
+            this.delayFeedback.gain.value = 0.45; // Feedback amount
+
+            this.delayWet = this.audioContext.createGain();
+            this.delayWet.gain.value = 0.5; // Wet/dry mix
+
+            // Create delay feedback loop
+            this.delayNode.connect(this.delayFeedback);
+            this.delayFeedback.connect(this.delayNode);
+            this.delayNode.connect(this.delayWet);
+
+            // Master gain
             this.masterGain = this.audioContext.createGain();
             this.masterGain.gain.value = this.volume;
+
+            // Connect to destination
+            this.delayWet.connect(this.audioContext.destination);
             this.masterGain.connect(this.audioContext.destination);
         }
     }
@@ -116,10 +139,10 @@ class CameraFlipDotDisplay {
         filterNode.Q.value = 1.8;
 
         const now = this.audioContext.currentTime;
-        const duration = 0.5; // Longer sustain for theremin feel
-        const attackTime = 0.12; // Slow, smooth attack like real theremin
-        const releaseTime = 0.3; // Long release for ethereal tail
-        const peakGain = 0.02;
+        const duration = 1.2; // Much longer sustain for blending
+        const attackTime = 0.15; // Slow, smooth attack
+        const releaseTime = 0.8; // Very long release for smooth tail
+        const peakGain = 0.018;
 
         // Theremin-style envelope - smooth and gradual
         masterGain.gain.setValueAtTime(0, now);
@@ -138,10 +161,15 @@ class CameraFlipDotDisplay {
         masterGain.gain.setValueAtTime(peakGain, sustainEnd);
         masterGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
 
-        // Connect the chain
+        // Connect the chain with both dry and delay sends
         carrier.connect(filterNode);
         filterNode.connect(masterGain);
+
+        // Dry signal
         masterGain.connect(this.masterGain);
+
+        // Delay send (wet signal)
+        masterGain.connect(this.delayNode);
 
         // Start all oscillators
         carrier.start(now);
