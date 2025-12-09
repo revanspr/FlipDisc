@@ -171,6 +171,7 @@ class CameraFlipDotDisplay {
     // Start camera capture
     async startCamera() {
         try {
+            console.log('Requesting camera access...');
             this.stream = await navigator.mediaDevices.getUserMedia({
                 video: {
                     width: { ideal: 1280 },
@@ -179,6 +180,7 @@ class CameraFlipDotDisplay {
                 }
             });
 
+            console.log('Camera access granted!');
             this.video.srcObject = this.stream;
             this.cameraActive = true;
 
@@ -186,12 +188,15 @@ class CameraFlipDotDisplay {
 
             // Wait for video to be ready
             this.video.onloadedmetadata = () => {
+                console.log('Video metadata loaded, starting playback...');
+                this.video.play();
+                console.log('Starting frame processing...');
                 this.startProcessing();
             };
 
         } catch (error) {
             console.error('Camera error:', error);
-            alert('Could not access camera. Please check permissions.');
+            alert('Could not access camera. Please check permissions. Error: ' + error.message);
         }
     }
 
@@ -219,7 +224,13 @@ class CameraFlipDotDisplay {
     }
 
     processFrame() {
-        if (!this.cameraActive || this.video.readyState < 2) {
+        if (!this.cameraActive) {
+            console.log('Camera not active');
+            return;
+        }
+
+        if (this.video.readyState < 2) {
+            console.log('Video not ready, readyState:', this.video.readyState);
             return;
         }
 
