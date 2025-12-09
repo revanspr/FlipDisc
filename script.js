@@ -66,10 +66,10 @@ class CameraFlipDotDisplay {
             this.delayNode.delayTime.value = 0.8; // 800ms delay for seamless blending
 
             this.delayFeedback = this.audioContext.createGain();
-            this.delayFeedback.gain.value = 0.75; // High feedback for infinite tail
+            this.delayFeedback.gain.value = 0.55; // Moderate feedback - no squeal
 
             this.delayWet = this.audioContext.createGain();
-            this.delayWet.gain.value = 0.85; // Mostly wet for continuous drone
+            this.delayWet.gain.value = 0.65; // Balanced wet/dry mix
 
             // Create delay feedback loop
             this.delayNode.connect(this.delayFeedback);
